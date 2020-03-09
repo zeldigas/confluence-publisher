@@ -38,6 +38,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 import static org.sahli.asciidoc.confluence.publisher.client.PublishingStrategy.APPEND_TO_ANCESTOR;
 import static org.sahli.asciidoc.confluence.publisher.client.PublishingStrategy.REPLACE_ANCESTOR;
 
@@ -294,7 +295,7 @@ public class ConfluencePublisherIntegrationTest {
     }
 
     private static ConfluencePublisher confluencePublisher(ConfluencePublisherMetadata confluencePublisherMetadata, PublishingStrategy publishingStrategy) {
-        return new ConfluencePublisher(confluencePublisherMetadata, publishingStrategy, confluenceRestClient());
+        return new ConfluencePublisher(confluencePublisherMetadata, publishingStrategy, confluenceRestClient(), mock(ConfluencePublisherListener.class), null);
     }
 
     private static RequestSpecification givenAuthenticatedAsPublisher() {

@@ -57,10 +57,6 @@ public class ConfluencePublisher {
     private final ConfluencePublisherListener confluencePublisherListener;
     private final String versionMessage;
 
-    public ConfluencePublisher(ConfluencePublisherMetadata metadata, PublishingStrategy publishingStrategy, ConfluenceClient confluenceClient) {
-        this(metadata, publishingStrategy, confluenceClient, new NoOpConfluencePublisherListener(), null);
-    }
-
     public ConfluencePublisher(ConfluencePublisherMetadata metadata, PublishingStrategy publishingStrategy,
                                ConfluenceClient confluenceClient, ConfluencePublisherListener confluencePublisherListener,
                                String versionMessage) {
@@ -94,14 +90,14 @@ public class ConfluencePublisher {
                     .map(page -> "'" + page.getTitle() + "'")
                     .collect(joining(", "));
 
-            throw new IllegalArgumentException("Multiple root pages detected: " + rootPageTitles + ", but '" + REPLACE_ANCESTOR + "' publishing strategy only supports one single root page");
+            throw new IllegalArgumentException("Multiple root pages found (" + rootPageTitles + "), but '" + REPLACE_ANCESTOR + "' publishing strategy only supports one single root page");
         }
 
-        if (rootPages.size() == 1) {
-            return rootPages.get(0);
+        if (rootPages.isEmpty()) {
+            throw new IllegalArgumentException("No root page found, but '" + REPLACE_ANCESTOR + "' publishing strategy requires one single root page");
         }
 
-        return null;
+        return rootPages.get(0);
     }
 
     private void startPublishingReplacingAncestorId(ConfluencePageMetadata rootPage, String spaceKey, String ancestorId) {
@@ -272,39 +268,6 @@ public class ConfluencePublisher {
         } catch (FileNotFoundException e) {
             throw new RuntimeException("Could not find attachment ", e);
         }
-    }
-
-
-    private static class NoOpConfluencePublisherListener implements ConfluencePublisherListener {
-
-        @Override
-        public void pageAdded(ConfluencePage addedPage) {
-        }
-
-        @Override
-        public void pageUpdated(ConfluencePage existingPage, ConfluencePage updatedPage) {
-        }
-
-        @Override
-        public void pageDeleted(ConfluencePage deletedPage) {
-        }
-
-        @Override
-        public void attachmentAdded(String attachmentFileName, String contentId) {
-        }
-
-        @Override
-        public void attachmentUpdated(String attachmentFileName, String contentId) {
-        }
-
-        @Override
-        public void attachmentDeleted(String attachmentFileName, String contentId) {
-        }
-
-        @Override
-        public void publishCompleted() {
-        }
-
     }
 
 }

@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -73,14 +74,19 @@ public class ConfluencePublisher {
 
     public void publish() {
         assertMandatoryParameter(isNotBlank(this.metadata.getSpaceKey()), "spaceKey");
-        assertMandatoryParameter(isNotBlank(this.metadata.getAncestorId()), "ancestorId");
+
 
         switch (this.publishingStrategy) {
             case APPEND_TO_ANCESTOR:
-                startPublishingUnderAncestorId(this.metadata.getPages(), this.metadata.getSpaceKey(), this.metadata.getAncestorId());
+                assertMandatoryParameter(isNotBlank(this.metadata.getAncestorId()), "ancestorId");
+                startPublishingUnderAncestorId(this.metadata.getPages(), this.metadata.getSpaceKey(), this.metadata.getAncestorId(), metadata.isRemovePages());
                 break;
             case REPLACE_ANCESTOR:
+                assertMandatoryParameter(isNotBlank(this.metadata.getAncestorId()), "ancestorId");
                 startPublishingReplacingAncestorId(singleRootPage(this.metadata), this.metadata.getSpaceKey(), this.metadata.getAncestorId());
+                break;
+            case BLOG:
+                publishBlogPosts(this.metadata.getPages(), this.metadata.getSpaceKey());
                 break;
             default:
                 throw new IllegalArgumentException("Invalid publishing strategy '" + this.publishingStrategy + "'");
@@ -116,12 +122,14 @@ public class ConfluencePublisher {
             deleteConfluenceAttachmentsNotPresentUnderPage(ancestorId, rootPage.getAttachments());
             addAttachments(ancestorId, rootPage.getAttachments());
 
-            startPublishingUnderAncestorId(rootPage.getChildren(), spaceKey, ancestorId);
+            startPublishingUnderAncestorId(rootPage.getChildren(), spaceKey, ancestorId, true);
         }
     }
 
-    private void startPublishingUnderAncestorId(List<ConfluencePageMetadata> pages, String spaceKey, String ancestorId) {
-        deleteConfluencePagesNotPresentUnderAncestor(pages, ancestorId);
+    private void startPublishingUnderAncestorId(List<ConfluencePageMetadata> pages, String spaceKey, String ancestorId, boolean removePages) {
+        if (removePages) {
+            deleteConfluencePagesNotPresentUnderAncestor(pages, ancestorId);
+        }
         pages.forEach(page -> {
             String contentId = addOrUpdatePageUnderAncestor(spaceKey, ancestorId, page);
 
@@ -130,7 +138,7 @@ public class ConfluencePublisher {
             deleteConfluenceAttachmentsNotPresentUnderPage(contentId, page.getAttachments());
             addAttachments(contentId, page.getAttachments());
 
-            startPublishingUnderAncestorId(page.getChildren(), spaceKey, contentId);
+            startPublishingUnderAncestorId(page.getChildren(), spaceKey, contentId, removePages);
         });
     }
 
@@ -187,6 +195,49 @@ public class ConfluencePublisher {
             this.confluenceClient.deletePropertyByKey(contentId, CONTENT_HASH_PROPERTY_KEY);
             int newPageVersion = existingPage.getVersion() + 1;
             this.confluenceClient.updatePage(contentId, ancestorId, page.getTitle(), content, newPageVersion, this.versionMessage);
+            this.confluenceClient.setPropertyByKey(contentId, CONTENT_HASH_PROPERTY_KEY, newContentHash);
+            this.confluencePublisherListener.pageUpdated(existingPage, new ConfluencePage(contentId, page.getTitle(), content, newPageVersion));
+        }
+    }
+
+    private void publishBlogPosts(List<ConfluencePageMetadata> pages, String spaceKey) {
+        pages.forEach(page -> {
+            String contentId = addOrUpdateBlogPost(spaceKey, page);
+
+            addOrUpdateLabels(contentId, page.getLabels());
+
+            deleteConfluenceAttachmentsNotPresentUnderPage(contentId, page.getAttachments());
+            addAttachments(contentId, page.getAttachments());
+        });
+    }
+
+    private String addOrUpdateBlogPost(String spaceKey, ConfluencePageMetadata page) {
+        String contentId;
+        LocalDate publishDate = page.blogPostDate();
+        String title = page.blogPostTitle();
+        try {
+            contentId = this.confluenceClient.getBlogPostByTitle(spaceKey, publishDate, title);
+            updateBlogPost(contentId, publishDate, title, page);
+        } catch (NotFoundException e) {
+            String content = fileContent(page.getContentFilePath(), UTF_8);
+            contentId = this.confluenceClient.addBlogPostPage(spaceKey, title, content, publishDate, this.versionMessage);
+            this.confluenceClient.setPropertyByKey(contentId, CONTENT_HASH_PROPERTY_KEY, hash(content));
+            this.confluencePublisherListener.pageAdded(new ConfluencePage(contentId, page.getTitle(), content, INITIAL_PAGE_VERSION));
+        }
+
+        return contentId;
+    }
+
+    private void updateBlogPost(String contentId, LocalDate publishDate, String title, ConfluencePageMetadata page) {
+        String content = fileContent(page.getContentFilePath(), UTF_8);
+        ConfluencePage existingPage = this.confluenceClient.getPageWithContentAndVersionById(contentId);
+        String existingContentHash = this.confluenceClient.getPropertyByKey(contentId, CONTENT_HASH_PROPERTY_KEY);
+        String newContentHash = hash(content);
+
+        if (notSameHash(existingContentHash, newContentHash) || !existingPage.getTitle().equals(title)) {
+            this.confluenceClient.deletePropertyByKey(contentId, CONTENT_HASH_PROPERTY_KEY);
+            int newPageVersion = existingPage.getVersion() + 1;
+            this.confluenceClient.updateBlogPost(contentId, title, content, publishDate, newPageVersion, this.versionMessage);
             this.confluenceClient.setPropertyByKey(contentId, CONTENT_HASH_PROPERTY_KEY, newContentHash);
             this.confluencePublisherListener.pageUpdated(existingPage, new ConfluencePage(contentId, page.getTitle(), content, newPageVersion));
         }

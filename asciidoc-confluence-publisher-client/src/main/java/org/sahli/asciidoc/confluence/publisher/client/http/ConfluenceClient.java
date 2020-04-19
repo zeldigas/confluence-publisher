@@ -17,12 +17,19 @@
 package org.sahli.asciidoc.confluence.publisher.client.http;
 
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
  * @author Alain Sahli
  */
 public interface ConfluenceClient {
+
+    String addBlogPostPage(String spaceKey, String title, String content, LocalDate publishDate, String versionMessage);
+
+    void updateBlogPost(String contentId, String title, String content, LocalDate publishDate, int newPageVersion, String versionMessage);
+
+    String getBlogPostByTitle(String spaceKey, LocalDate publishDate, String title);
 
     String addPageUnderAncestor(String spaceKey, String ancestorId, String title, String content, String versionMessage);
 
@@ -57,5 +64,4 @@ public interface ConfluenceClient {
     void addLabels(String contentId, List<String> labels);
 
     void deleteLabel(String contentId, String label);
-
 }

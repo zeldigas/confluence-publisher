@@ -18,6 +18,7 @@ package org.sahli.asciidoc.confluence.publisher.client.metadata;
 
 import org.sahli.asciidoc.confluence.publisher.client.support.RuntimeUse;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -85,4 +86,13 @@ public class ConfluencePageMetadata {
         this.labels = labels;
     }
 
+    public LocalDate blogPostDate() {
+        int index = title.indexOf(' ');
+        return LocalDate.parse(title.substring(0, index));
+    }
+
+    public String blogPostTitle() {
+        int index = title.indexOf(' ');
+        return title.substring(index + 1).trim();
+    }
 }

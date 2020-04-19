@@ -22,6 +22,7 @@ import org.sahli.asciidoc.confluence.publisher.client.PublishingStrategy;
 import org.sahli.asciidoc.confluence.publisher.client.http.ConfluencePage;
 import org.sahli.asciidoc.confluence.publisher.client.http.ConfluenceRestClient;
 import org.sahli.asciidoc.confluence.publisher.client.http.ConfluenceRestClient.ProxyConfiguration;
+import org.sahli.asciidoc.confluence.publisher.client.metadata.ConfluencePageMetadata;
 import org.sahli.asciidoc.confluence.publisher.client.metadata.ConfluencePublisherMetadata;
 import org.sahli.asciidoc.confluence.publisher.converter.AsciidocConfluenceConverter;
 import org.sahli.asciidoc.confluence.publisher.converter.AsciidocPagesStructureProvider;
@@ -37,6 +38,7 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import static java.lang.Integer.parseInt;
@@ -45,6 +47,7 @@ import static java.nio.file.Files.createTempDirectory;
 import static java.nio.file.Files.delete;
 import static java.nio.file.Files.walkFileTree;
 import static org.sahli.asciidoc.confluence.publisher.client.PublishingStrategy.APPEND_TO_ANCESTOR;
+import static org.sahli.asciidoc.confluence.publisher.client.PublishingStrategy.BLOG;
 
 public class AsciidocConfluencePublisherCommandLineClient {
 
@@ -55,9 +58,16 @@ public class AsciidocConfluencePublisherCommandLineClient {
         String username = argumentsParser.mandatoryArgument("username", args);
         String password = argumentsParser.mandatoryArgument("password", args);
         String spaceKey = argumentsParser.mandatoryArgument("spaceKey", args);
-        String ancestorId = argumentsParser.mandatoryArgument("ancestorId", args);
-        String versionMessage = argumentsParser.optionalArgument("versionMessage", args).orElse(null);
         PublishingStrategy publishingStrategy = PublishingStrategy.valueOf(argumentsParser.optionalArgument("publishingStrategy", args).orElse(APPEND_TO_ANCESTOR.name()));
+        String ancestorId = argumentsParser.optionalArgument("ancestorId", args).orElseGet(() -> {
+            if (publishingStrategy == BLOG) {
+                return null;
+            } else {
+                throw new IllegalArgumentException("ancestorId argument is required for publishing "+publishingStrategy);
+            }
+        });
+        boolean removePages = argumentsParser.optionalBooleanArgument("removePages", args).orElse(true);
+        String versionMessage = argumentsParser.optionalArgument("versionMessage", args).orElse(null);
 
         Path documentationRootFolder = Paths.get(argumentsParser.mandatoryArgument("asciidocRootFolder", args));
         Path buildFolder = createTempDirectory("confluence-publisher");
@@ -78,12 +88,14 @@ public class AsciidocConfluencePublisherCommandLineClient {
             PageTitlePostProcessor pageTitlePostProcessor = new PrefixAndSuffixPageTitlePostProcessor(prefix, suffix);
 
             AsciidocConfluenceConverter asciidocConfluenceConverter = new AsciidocConfluenceConverter(spaceKey, ancestorId);
-            ConfluencePublisherMetadata confluencePublisherMetadata = asciidocConfluenceConverter.convert(asciidocPagesStructureProvider, pageTitlePostProcessor, buildFolder, attributes);
+            List<ConfluencePageMetadata> pages = asciidocConfluenceConverter.convert(asciidocPagesStructureProvider, pageTitlePostProcessor, buildFolder, attributes).getPages();
+
+            ConfluencePublisherMetadata meta = new ConfluencePublisherMetadata(spaceKey, ancestorId, removePages, pages);
 
             ProxyConfiguration proxyConfiguration = new ProxyConfiguration(proxyScheme, proxyHost, proxyPort, proxyUsername, proxyPassword);
 
             ConfluenceRestClient confluenceClient = new ConfluenceRestClient(rootConfluenceUrl, proxyConfiguration, skipSslVerification, username, password);
-            ConfluencePublisher confluencePublisher = new ConfluencePublisher(confluencePublisherMetadata, publishingStrategy, confluenceClient, new SystemOutLoggingConfluencePublisherListener(), versionMessage);
+            ConfluencePublisher confluencePublisher = new ConfluencePublisher(meta, publishingStrategy, confluenceClient, new SystemOutLoggingConfluencePublisherListener(), versionMessage);
             confluencePublisher.publish();
         } finally {
             deleteDirectory(buildFolder);

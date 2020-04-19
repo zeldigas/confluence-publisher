@@ -124,7 +124,7 @@ public class AsciidocConfluencePage {
             Options options = options(templatesDir, asciidocPagePath.getParent(), pageAssetsFolder, userAttributes);
             String pageContent = convertedContent(asciidocContent, options, asciidocPagePath, attachmentCollector, pageTitlePostProcessor, sourceEncoding);
 
-            String pageTitle = pageTitle(asciidocContent, pageTitlePostProcessor);
+            String pageTitle = pageTitle(asciidocContent, pageTitlePostProcessor, asciidocPagePath.getFileName().toString());
 
             List<String> keywords = keywords(asciidocContent);
 
@@ -182,11 +182,11 @@ public class AsciidocConfluencePage {
         return stream(postProcessors).reduce(initialContent, (accumulator, postProcessor) -> postProcessor.apply(accumulator), unusedCombiner());
     }
 
-    private static String pageTitle(String pageContent, PageTitlePostProcessor pageTitlePostProcessor) {
+    private static String pageTitle(String pageContent, PageTitlePostProcessor pageTitlePostProcessor, String fileName) {
         return Optional.ofNullable(ASCIIDOCTOR.readDocumentHeader(pageContent).getDocumentTitle())
                 .map(title -> title.getMain())
                 .map((pageTitle) -> pageTitlePostProcessor.process(pageTitle))
-                .orElseThrow(() -> new RuntimeException("top-level heading or title meta information must be set"));
+                .orElseGet(() -> fileName.substring(0, fileName.lastIndexOf('.')));
     }
 
     private static Options options(Path templatesFolder, Path baseFolder, Path generatedAssetsTargetFolder, Map<String, Object> userAttributes) {
@@ -219,7 +219,7 @@ public class AsciidocConfluencePage {
 
             try {
                 String referencedPageContent = readIntoString(new FileInputStream(referencedPagePath.toFile()), sourceEncoding);
-                String referencedPageTitle = pageTitle(referencedPageContent, pageTitlePostProcessor);
+                String referencedPageTitle = pageTitle(referencedPageContent, pageTitlePostProcessor, referencedPagePath.getFileName().toString());
 
                 return "<ri:page ri:content-title=\"" + referencedPageTitle + "\"";
             } catch (FileNotFoundException e) {

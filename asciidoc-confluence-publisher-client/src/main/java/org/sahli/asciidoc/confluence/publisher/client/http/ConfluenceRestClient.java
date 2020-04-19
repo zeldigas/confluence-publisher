@@ -39,6 +39,7 @@ import org.apache.http.ssl.SSLContextBuilder;
 import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -87,6 +88,23 @@ public class ConfluenceRestClient implements ConfluenceClient {
     }
 
     @Override
+    public String addBlogPostPage(String spaceKey, String title, String content, LocalDate publishDate, String versionMessage) {
+        HttpPost addPageUnderSpaceRequest = this.httpRequestFactory.addBlogPostRequest(spaceKey, title, content, publishDate, versionMessage);
+
+        return sendRequestAndFailIfNot20x(addPageUnderSpaceRequest, (response) -> {
+            String contentId = extractIdFromJsonNode(parseJsonResponse(response));
+
+            return contentId;
+        });
+    }
+
+    @Override
+    public void updateBlogPost(String contentId, String title, String content, LocalDate publishDate, int newPageVersion, String versionMessage) {
+        HttpPut updatePageRequest = this.httpRequestFactory.updateBlogPostRequest(contentId, title, content, publishDate, newPageVersion, versionMessage);
+        sendRequestAndFailIfNot20x(updatePageRequest);
+    }
+
+    @Override
     public String addPageUnderAncestor(String spaceKey, String ancestorId, String title, String content, String versionMessage) {
         HttpPost addPageUnderSpaceRequest = this.httpRequestFactory.addPageUnderAncestorRequest(spaceKey, ancestorId, title, content, versionMessage);
 
@@ -112,6 +130,28 @@ public class ConfluenceRestClient implements ConfluenceClient {
     @Override
     public String getPageByTitle(String spaceKey, String title) throws NotFoundException, MultipleResultsException {
         HttpGet pageByTitleRequest = this.httpRequestFactory.getPageByTitleRequest(spaceKey, title);
+
+        return sendRequestAndFailIfNot20x(pageByTitleRequest, (response) -> {
+            JsonNode jsonNode = parseJsonResponse(response);
+
+            int numberOfResults = jsonNode.get("size").asInt();
+            if (numberOfResults == 0) {
+                throw new NotFoundException();
+            }
+
+            if (numberOfResults > 1) {
+                throw new MultipleResultsException();
+            }
+
+            String contentId = extractIdFromJsonNode(jsonNode.withArray("results").elements().next());
+
+            return contentId;
+        });
+    }
+
+    @Override
+    public String getBlogPostByTitle(String spaceKey, LocalDate publishDate, String title) {
+        HttpGet pageByTitleRequest = this.httpRequestFactory.findBlogPost(spaceKey, title, publishDate);
 
         return sendRequestAndFailIfNot20x(pageByTitleRequest, (response) -> {
             JsonNode jsonNode = parseJsonResponse(response);

@@ -24,21 +24,17 @@ import java.util.List;
 /**
  * @author Alain Sahli
  */
-public class PagePayload implements PageContent {
+public class BlogPostPayload implements PageContent {
 
     private String title;
     private Space space;
     private Body body;
-    private final List<Ancestor> ancestors = new ArrayList<>();
     private Version version;
-
-    public void addAncestor(Ancestor ancestor) {
-        this.ancestors.add(ancestor);
-    }
+    private CreationInfo history;
 
     @RuntimeUse
     public String getType() {
-        return "page";
+        return "blogpost";
     }
 
     @RuntimeUse
@@ -69,11 +65,6 @@ public class PagePayload implements PageContent {
     }
 
     @RuntimeUse
-    public List<Ancestor> getAncestors() {
-        return this.ancestors;
-    }
-
-    @RuntimeUse
     public Version getVersion() {
         return this.version;
     }
@@ -82,4 +73,12 @@ public class PagePayload implements PageContent {
         this.version = version;
     }
 
+    @RuntimeUse
+    public CreationInfo getHistory() {
+        return history;
+    }
+
+    public void setHistory(CreationInfo history) {
+        this.history = history;
+    }
 }

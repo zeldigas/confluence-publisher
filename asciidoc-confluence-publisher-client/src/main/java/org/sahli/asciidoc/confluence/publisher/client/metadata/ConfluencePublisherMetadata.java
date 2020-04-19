@@ -28,7 +28,18 @@ public class ConfluencePublisherMetadata {
 
     private String spaceKey;
     private String ancestorId;
+    private boolean removePages = true;
     private List<ConfluencePageMetadata> pages = new ArrayList<>();
+
+    public ConfluencePublisherMetadata() {
+    }
+
+    public ConfluencePublisherMetadata(String spaceKey, String ancestorId, boolean removePages, List<ConfluencePageMetadata> pages) {
+        this.spaceKey = spaceKey;
+        this.ancestorId = ancestorId;
+        this.removePages = removePages;
+        this.pages = pages;
+    }
 
     public String getSpaceKey() {
         return this.spaceKey;
@@ -57,4 +68,11 @@ public class ConfluencePublisherMetadata {
         this.pages = pages;
     }
 
+    public boolean isRemovePages() {
+        return removePages;
+    }
+
+    public void setRemovePages(boolean removePages) {
+        this.removePages = removePages;
+    }
 }

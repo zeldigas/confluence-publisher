@@ -31,14 +31,7 @@ import org.apache.http.entity.mime.HttpMultipartMode;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.InputStreamBody;
 import org.apache.http.message.BasicHeader;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.Ancestor;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.Body;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.Label;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.PagePayload;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.PropertyPayload;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.Space;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.Storage;
-import org.sahli.asciidoc.confluence.publisher.client.http.payloads.Version;
+import org.sahli.asciidoc.confluence.publisher.client.http.payloads.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -46,6 +39,10 @@ import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -71,6 +68,41 @@ class HttpRequestFactory {
 
         this.rootConfluenceUrl = rootConfluenceUrl;
         this.confluenceRestApiEndpoint = rootConfluenceUrl + REST_API_CONTEXT;
+    }
+
+    HttpPost addBlogPostRequest(String spaceKey, String title, String content, LocalDate publishDate, String versionMessage) {
+        assertMandatoryParameter(isNotBlank(spaceKey), "spaceKey");
+        assertMandatoryParameter(isNotBlank(title), "title");
+
+        BlogPostPayload pagePayload = pagePayloadBuilder()
+                .spaceKey(spaceKey)
+                .title(title)
+                .content(content)
+                .publishDate(publishDate)
+                .version(INITAL_VERSION)
+                .versionMessage(versionMessage)
+                .buildPost();
+
+        return addPageHttpPost(this.confluenceRestApiEndpoint, pagePayload);
+    }
+
+    HttpPut updateBlogPostRequest(String contentId, String title, String content, LocalDate publishDate, int newVersion, String versionMessage) {
+        assertMandatoryParameter(isNotBlank(contentId), "contentId");
+        assertMandatoryParameter(isNotBlank(title), "title");
+
+        BlogPostPayload pagePayload = pagePayloadBuilder()
+                .title(title)
+                .content(content)
+                .publishDate(publishDate)
+                .version(newVersion)
+                .versionMessage(versionMessage)
+                .buildPost();
+
+        HttpPut updatePageRequest = new HttpPut(this.confluenceRestApiEndpoint + "/content/" + contentId);
+        updatePageRequest.setEntity(httpEntityWithJsonPayload(pagePayload));
+        updatePageRequest.addHeader(APPLICATION_JSON_UTF8_HEADER);
+
+        return updatePageRequest;
     }
 
     HttpPost addPageUnderAncestorRequest(String spaceKey, String ancestorId, String title, String content, String versionMessage) {
@@ -153,14 +185,25 @@ class HttpRequestFactory {
         assertMandatoryParameter(isNotBlank(spaceKey), "spaceKey");
         assertMandatoryParameter(isNotBlank(title), "title");
 
-        String encodedTitle;
-        try {
-            encodedTitle = URLEncoder.encode(title, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException("Could not encode title", e);
-        }
+        String encodedTitle = encodeOrThrow(title, "title");
 
         String searchQuery = this.confluenceRestApiEndpoint + "/content?spaceKey=" + spaceKey + "&title=" + encodedTitle;
+
+        return new HttpGet(searchQuery);
+    }
+
+    private String encodeOrThrow(String value, String kind) {
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException("Could not encode "+kind, e);
+        }
+    }
+
+    public HttpGet findBlogPost(String spaceKey, String title, LocalDate publishDate) {
+        String encodedTitle = encodeOrThrow(title, "title");
+        String searchQuery = this.confluenceRestApiEndpoint + "/content?type=blogpost&spaceKey=" + spaceKey + "&title=" + encodedTitle
+                + "&postingDay="+publishDate.toString();
 
         return new HttpGet(searchQuery);
     }
@@ -310,7 +353,7 @@ class HttpRequestFactory {
         return new HttpDelete(this.confluenceRestApiEndpoint + "/content/" + contentId + "/label?name=" + label);
     }
 
-    private static HttpPost addPageHttpPost(String confluenceRestApiEndpoint, PagePayload pagePayload) {
+    private static HttpPost addPageHttpPost(String confluenceRestApiEndpoint, PageContent pagePayload) {
         HttpPost postRequest = new HttpPost(confluenceRestApiEndpoint + "/content");
         postRequest.setEntity(httpEntityWithJsonPayload(pagePayload));
         postRequest.addHeader(APPLICATION_JSON_UTF8_HEADER);
@@ -363,6 +406,7 @@ class HttpRequestFactory {
         private String ancestorId;
         private Integer version;
         private String versionMessage;
+        private LocalDate publishDate;
 
         public PagePayloadBuilder title(String title) {
             this.title = title;
@@ -400,22 +444,19 @@ class HttpRequestFactory {
             return this;
         }
 
+        public PagePayloadBuilder publishDate(LocalDate publishDate) {
+            this.publishDate = publishDate;
+
+            return this;
+        }
+
         private PagePayload build() {
-            Storage storage = new Storage();
-            storage.setValue(this.content);
-
-            Body body = new Body();
-            body.setStorage(storage);
-
             PagePayload pagePayload = new PagePayload();
-            pagePayload.setBody(body);
             pagePayload.setTitle(this.title);
 
-            if (isNotBlank(this.spaceKey)) {
-                Space space = new Space();
-                space.setKey(this.spaceKey);
-                pagePayload.setSpace(space);
-            }
+            pagePayload.setBody(createBody());
+            pagePayload.setSpace(createSpace());
+            pagePayload.setVersion(createVersion());
 
             if (isNotBlank(this.ancestorId)) {
                 Ancestor ancestor = new Ancestor();
@@ -423,16 +464,58 @@ class HttpRequestFactory {
                 pagePayload.addAncestor(ancestor);
             }
 
+            return pagePayload;
+        }
+
+        private BlogPostPayload buildPost() {
+            Storage storage = new Storage();
+            storage.setValue(this.content);
+
+            BlogPostPayload pagePayload = new BlogPostPayload();
+            pagePayload.setTitle(this.title);
+            pagePayload.setBody(createBody());
+            pagePayload.setSpace(createSpace());
+            pagePayload.setVersion(createVersion());
+
+            if (publishDate != null){
+                CreationInfo info = new CreationInfo();
+                info.setCreatedDate(ZonedDateTime.of(publishDate, LocalTime.NOON, ZoneId.of("Z")));
+                pagePayload.setHistory(info);
+            }
+
+            return pagePayload;
+        }
+
+        private Body createBody() {
+            Storage storage = new Storage();
+            storage.setValue(this.content);
+
+            Body body = new Body();
+            body.setStorage(storage);
+            return body;
+        }
+
+        private Space createSpace() {
+            if (isNotBlank(this.spaceKey)) {
+                Space space = new Space();
+                space.setKey(this.spaceKey);
+                return space;
+            } else {
+                return null;
+            }
+        }
+
+        private Version createVersion() {
             if (this.version != null) {
                 Version versionContainer = new Version();
                 versionContainer.setNumber(this.version);
                 if (this.versionMessage != null) {
                     versionContainer.setMessage(this.versionMessage);
                 }
-                pagePayload.setVersion(versionContainer);
+                return versionContainer;
+            } else {
+                return null;
             }
-
-            return pagePayload;
         }
 
         static PagePayloadBuilder pagePayloadBuilder() {

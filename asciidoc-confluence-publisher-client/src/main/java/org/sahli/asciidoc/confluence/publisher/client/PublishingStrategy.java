@@ -22,6 +22,7 @@ package org.sahli.asciidoc.confluence.publisher.client;
 public enum PublishingStrategy {
 
     APPEND_TO_ANCESTOR,
-    REPLACE_ANCESTOR
+    REPLACE_ANCESTOR,
+    BLOG
 
 }

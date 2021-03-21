@@ -19,6 +19,7 @@ package org.sahli.asciidoc.confluence.publisher.converter;
 import org.asciidoctor.Asciidoctor;
 import org.asciidoctor.Options;
 import org.asciidoctor.OptionsBuilder;
+import org.asciidoctor.ast.DocumentHeader;
 import org.sahli.asciidoc.confluence.publisher.converter.AsciidocPagesStructureProvider.AsciidocPage;
 
 import java.io.BufferedReader;
@@ -47,7 +48,6 @@ import static java.nio.file.Files.newInputStream;
 import static java.util.Arrays.stream;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
-import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.regex.Matcher.quoteReplacement;
 import static java.util.regex.Pattern.DOTALL;
@@ -78,13 +78,14 @@ public class AsciidocConfluencePage {
     private final String pageTitle;
     private final String htmlContent;
     private final Map<String, String> attachments;
-    private final List<String> keywords;
+    private final Map<String, Object> attributes;
 
-    private AsciidocConfluencePage(String pageTitle, String htmlContent, Map<String, String> attachments, List<String> keywords) {
+    private AsciidocConfluencePage(String pageTitle, String htmlContent, Map<String, String> attachments,
+                                   Map<String, Object> pageAttrs) {
         this.pageTitle = pageTitle;
         this.htmlContent = htmlContent;
         this.attachments = attachments;
-        this.keywords = keywords;
+        this.attributes = pageAttrs;
     }
 
     public String content() {
@@ -100,7 +101,11 @@ public class AsciidocConfluencePage {
     }
 
     public List<String> keywords() {
-        return unmodifiableList(this.keywords);
+        return extractKeywords(attributes);
+    }
+
+    public Map<String, Object> getAttributes() {
+        return attributes;
     }
 
     public static AsciidocConfluencePage newAsciidocConfluencePage(AsciidocPage asciidocPage, Charset sourceEncoding, Path templatesDir, Path pageAssetsFolder) {
@@ -134,11 +139,11 @@ public class AsciidocConfluencePage {
             Options options = options(templatesDir, asciidocPagePath.getParent(), pageAssetsFolder, userAttributesWithMaskedNullValues);
             String pageContent = convertedContent(asciidocContent, options, asciidocPagePath, attachmentCollector, userAttributesWithMaskedNullValues, pageTitlePostProcessor, sourceEncoding, spaceKey);
 
-            String pageTitle = pageTitle(asciidocContent, userAttributesWithMaskedNullValues, pageTitlePostProcessor);
+            DocumentHeader header = ASCIIDOCTOR.readDocumentHeader(pageContent);
 
-            List<String> keywords = keywords(asciidocContent);
+            String pageTitle = pageTitle(header, userAttributesWithMaskedNullValues, pageTitlePostProcessor);
 
-            return new AsciidocConfluencePage(pageTitle, pageContent, attachmentCollector, keywords);
+            return new AsciidocConfluencePage(pageTitle, pageContent, attachmentCollector, header.getAttributes());
         } catch (Exception e) {
             throw new RuntimeException("failed to create confluence page for asciidoc content in '" + asciidocPage.path().toAbsolutePath() + " '", e);
         }
@@ -192,8 +197,8 @@ public class AsciidocConfluencePage {
         return stream(postProcessors).reduce(initialContent, (accumulator, postProcessor) -> postProcessor.apply(accumulator), unusedCombiner());
     }
 
-    private static String pageTitle(String pageContent, Map<String, Object> userAttributes, PageTitlePostProcessor pageTitlePostProcessor) {
-        return Optional.ofNullable(ASCIIDOCTOR.readDocumentHeader(pageContent).getDocumentTitle())
+    private static String pageTitle(DocumentHeader header, Map<String, Object> userAttributes, PageTitlePostProcessor pageTitlePostProcessor) {
+        return Optional.ofNullable(header.getDocumentTitle())
                 .map(title -> title.getMain())
                 .map(title -> replaceUserAttributes(title, userAttributes))
                 .map((pageTitle) -> pageTitlePostProcessor.process(pageTitle))
@@ -230,7 +235,7 @@ public class AsciidocConfluencePage {
 
             try {
                 String referencedPageContent = readIntoString(new FileInputStream(referencedPagePath.toFile()), sourceEncoding);
-                String referencedPageTitle = pageTitle(referencedPageContent, userAttributes, pageTitlePostProcessor);
+                String referencedPageTitle = pageTitle(ASCIIDOCTOR.readDocumentHeader(referencedPageContent), userAttributes, pageTitlePostProcessor);
 
                 /*
                     Currently the ri:space-key attribute is required in order
@@ -269,8 +274,8 @@ public class AsciidocConfluencePage {
         }
     }
 
-    private static List<String> keywords(String pageContent) {
-        String keywords = (String) ASCIIDOCTOR.readDocumentHeader(pageContent).getAttributes().get("keywords");
+    private static List<String> extractKeywords(Map<String, Object> attributes) {
+        String keywords = (String) attributes.get("keywords");
         if (keywords == null) {
             return emptyList();
         }

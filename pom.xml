@@ -78,6 +78,7 @@
         <module>asciidoc-confluence-publisher-doc</module>
         <module>asciidoc-confluence-publisher-docker</module>
         <module>asciidoc-confluence-publisher-maven-plugin</module>
+        <module>cli2</module>
     </modules>
 
     <dependencyManagement>
